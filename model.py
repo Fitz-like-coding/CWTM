@@ -282,7 +282,6 @@ class CWTM(nn.Module):
         current_time = time.time()
         self.save(path=f"./save/CWTM_{self.latent_size}_topics_{current_time}")
         print("Training finished")
-        self.print_topics(top_k=25)
         return 
     
     def extracting_topics(self, data):
@@ -343,12 +342,10 @@ class CWTM(nn.Module):
         return X
     
     def print_topics(self, top_k = 25, stopwords=[]):
-        stopwords = set(nltk.corpus.stopwords.words('english'))
-
         vobs = np.array(list(self.word2topic.keys()))
         topic2word = np.array(list(self.word2topic.values())).T
         for i in range(self.latent_size):
-            topic = ", ".join([w for w in vobs[topic2word[i].argsort()[::-1]] if w not in stopwords and not re.search("[^a-zA-Z0-9 -]", w)][:top_k])
+            topic = ", ".join([w for w in vobs[topic2word[i].argsort()[::-1]] if w not in stopwords and not re.search("[^a-zA-Z]", w)][:top_k])
             print('topic {index}: {words}'.format(index = i, words=topic))
     
     def mmd_loss(self, x, y, t=1.0, kernel='diffusion'):
