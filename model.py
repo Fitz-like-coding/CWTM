@@ -1,4 +1,5 @@
 import os
+import re
 import copy
 import time
 import torch
@@ -9,6 +10,10 @@ from torch.nn import functional as F
 from transformers import BertForMaskedLM, BertTokenizerFast, AdamW, get_scheduler
 from nltk.stem import PorterStemmer, WordNetLemmatizer
 from tqdm import tqdm
+import nltk
+import json
+from nltk.corpus import stopwords
+nltk.download('stopwords')
 class PrefixEncoder(torch.nn.Module):
     r'''
     The torch.nn model to encode the prefix
@@ -217,6 +222,25 @@ class CWTM(nn.Module):
         )
         return lr_scheduler
 
+    def load(self, path):
+        model_state_dict = torch.load(path+"/model_state_dict.pth")
+        self.load_state_dict(model_state_dict)
+        with open(path+'/word2topic.txt', "r") as file:
+            for line in tqdm(file.readlines()):
+                temp = json.loads(line)
+                self.word2topic[temp['word']] = temp['topic_dist']
+        print(f"Load model from {path}.")
+    
+    def save(self, path=None):
+        if not os.path.exists(path):
+            os.mkdir(path)
+        torch.save(self.state_dict(), f"{path}/model_state_dict.pth")
+        with open(f"{path}/word2topic.txt", "w") as file:
+            for w, topic_dist in self.word2topic.items():
+                file.write(json.dumps({"word": str(w), "topic_dist": [round(float(v), 5) for v in topic_dist]}))
+                file.write("\n")
+        print(f"Save model to {path}.")
+
     def fit(self, data_generator, n_epochs):
         optimizer = self.get_optimizer(lr=1e-3, eps=1e-6, weight_decay=0.01)
         lr_scheduler = self.get_scheduler(n_epochs, optimizer, data_generator)
@@ -225,7 +249,7 @@ class CWTM(nn.Module):
 
             self.train()
             train_loss = []
-            for batch_idx, sample in tqdm(enumerate(data_generator)):
+            for batch_idx, sample in tqdm(enumerate(data_generator), total=len(data_generator)):
                 input = sample[0].to(self.device)
                 attention_masks = sample[1].to(self.device)
                 words_mask = sample[2].to(self.device)
@@ -253,29 +277,25 @@ class CWTM(nn.Module):
             print('Epoch: %d' %(epoch + 1), " | time in %d minutes, %d seconds" %(mins, secs))
             print(f'\ttrain Loss: {np.mean(train_loss):.4f}')
 
-        if not os.path.exists("./save"):
-            os.mkdir("./save")
-        torch.save(self.state_dict(), f"./save/CWTM_{self.latent_size}_topics.pth")
-        print("Training finished")
-        print(f"Model saved to ./save/CWTM_{self.latent_size}_topics.pth")
-
         print("extracting topic words...")
         self.extracting_topics(data_generator)
+        current_time = time.time()
+        self.save(path=f"./save/CWTM_{self.latent_size}_topics_{current_time}")
+        print("Training finished")
         self.print_topics(top_k=25)
-        print("Done")
         return 
     
     def extracting_topics(self, data):
         lemmatizer = WordNetLemmatizer()
         self.eval()
         doc_count = 0
-        for i, sample in enumerate(data):
+        for i, sample in tqdm(enumerate(data), total=len(data)):
             input_ids = sample[0].to(self.device)
             attention_masks = sample[1].to(self.device)
             words_mask = sample[2].to(self.device)
             cls = sample[3].to(self.device)
             with torch.no_grad():
-                _, _, _, _, theta, kw = self(input_ids, attention_masks.clone(), words_mask.clone(), input_ids)
+                _, _, _, _, theta, kw = self(input_ids, attention_masks.clone(), input_ids)
                 kw = kw * words_mask.unsqueeze(2)
                 temp_doc_count = {}
                 for sent_idx, input_id in enumerate(input_ids):
@@ -286,7 +306,7 @@ class CWTM(nn.Module):
                     for word_idx, current_token in enumerate(self.tokenizer.convert_ids_to_tokens(input_id)):
                         if word_idx == 0:
                             continue
-                        if "##" in current_token:
+                        if current_token.startswith("##"):
                             previous_token += current_token.replace("##", "")
                             previous_topic += kw[sent_idx][word_idx].cpu().data.numpy()
                             c += 1
@@ -305,13 +325,8 @@ class CWTM(nn.Module):
                             previous_topic = kw[sent_idx][word_idx].cpu().data.numpy()
                             c = 1
                     for w in temp_doc_count:
-                        self.docCountByWord[w] += temp_doc_count[w]
+                        self.docCountByWord[w] = self.docCountByWord.get(w, 0) + temp_doc_count[w]
             torch.cuda.empty_cache()
-
-        # stopwords = set()
-        # for w, v in self.docCountByWord[w].items():
-        #     if v/doc_count > 0.50 or v < 3: # remove vocab over 50% docs or fre < 3 docs.
-        #         stopwords.add(w)
 
     def transform(self, data):
         self.eval()       
@@ -322,16 +337,18 @@ class CWTM(nn.Module):
                 words_mask = sample[2].to(self.device)
                 with torch.no_grad():
                     # for topic model
-                    _, _, _, _, theta, _ = self(input_ids.clone(), attention_masks.clone(), words_mask.clone(), input_ids.clone())
+                    _, _, _, _, theta, _ = self(input_ids.clone(), attention_masks.clone(), input_ids.clone())
                     X.extend(theta.cpu().data.numpy())
         X = np.array(X)
         return X
     
-    def print_topics(self, top_k = 25):
+    def print_topics(self, top_k = 25, stopwords=[]):
+        stopwords = set(nltk.corpus.stopwords.words('english'))
+
         vobs = np.array(list(self.word2topic.keys()))
         topic2word = np.array(list(self.word2topic.values())).T
-        for i in range(len(topic2word)):
-            topic = ", ".join([w for w in vobs[topic2word[i].argsort()[::-1]]][:top_k])
+        for i in range(self.latent_size):
+            topic = ", ".join([w for w in vobs[topic2word[i].argsort()[::-1]] if w not in stopwords and not re.search("[^a-zA-Z0-9 -]", w)][:top_k])
             print('topic {index}: {words}'.format(index = i, words=topic))
     
     def mmd_loss(self, x, y, t=1.0, kernel='diffusion'):
