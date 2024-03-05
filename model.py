@@ -355,12 +355,15 @@ class CWTM(nn.Module):
         X = np.array(X)
         return X
     
-    def print_topics(self, top_k = 10, stopwords=[]):
+    def get_topics(self, top_k = 10, stopwords=[]):
         vobs = np.array(list(self.word2topic.keys()))
         topic2word = np.array(list(self.word2topic.values())).T
+        topics = {}
         for i in range(self.latent_size):
-            topic = ", ".join([w for w in vobs[topic2word[i].argsort()[::-1]] if w not in stopwords and not re.search("[^a-zA-Z]", w)][:top_k])
+            topics[i] = [w for w in vobs[topic2word[i].argsort()[::-1]] if w not in stopwords and not re.search("[^a-zA-Z]", w)][:top_k]
+            topic = ", ".join(topics[i])
             print('topic {index}: {words}'.format(index = i, words=topic))
+        return topics
     
     def mmd_loss(self, x, y, t=1.0, kernel='diffusion'):
         '''

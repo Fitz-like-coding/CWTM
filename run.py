@@ -5,9 +5,12 @@ import torch
 from transformers import BertTokenizerFast
 import torch
 import nltk
-from load_datasets import TwentyNewsDataset, TagMyNewsDataset, Dbpedia14Dataset, TwitterEmotion3, AGNews
+from utils.load_datasets import TwentyNewsDataset, TagMyNewsDataset, Dbpedia14Dataset, TwitterEmotion3, AGNews
+from utils.evaluation import CoherenceEvaluator, DiversityEvaluator
 from sklearn.metrics.cluster import contingency_matrix
 from model import CWTM
+from sklearn.model_selection import cross_val_score
+from sklearn.linear_model import LogisticRegression
 
 import warnings
 warnings.filterwarnings("ignore")
@@ -95,16 +98,19 @@ if __name__ == "__main__":
     with open("./data/stopwords.en.txt") as file:
         for word in file.readlines():
             stopwords.add(word.strip())
-    cwtm_model.print_topics(25, stopwords=stopwords)
+    topics = cwtm_model.get_topics(25, stopwords=stopwords)
+    evaluator = CoherenceEvaluator()
+    score = evaluator.coherence_score(topics.values())
+    print("Coherence score:", score)
+
+    evaluator = DiversityEvaluator(device=device, stopwords=stopwords, target_model=cwtm_model)
+    evaluator.fit_embeddings(train_data)
+    print("Diversity score:", evaluator.diversity_score())
 
     valid_data = DataLoader(sub_valid, batch_size=BATCH, shuffle=False, num_workers = 4, pin_memory=True, collate_fn=generate_batch)
     X = cwtm_model.transform(valid_data)
     Y = sub_valid[:]['labels']
 
-    from sklearn.model_selection import cross_val_score
-    from sklearn.linear_model import LogisticRegression
-    from sklearn.cluster import KMeans
-
     clf = LogisticRegression(max_iter=500)
     valid_cls_scores = cross_val_score(clf, X, Y, scoring="accuracy", cv=5, n_jobs=5)
-    print("valid_cls_scores: " + str(np.mean(valid_cls_scores)))
+    print("Classification score: " + str(np.mean(valid_cls_scores)))
