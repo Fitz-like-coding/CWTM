@@ -284,7 +284,7 @@ class CWTM(nn.Module):
         print("Training finished")
         return 
     
-    def extracting_topics(self, data):
+    def extracting_topics(self, data, min_df=3, max_df=0.5, remove_top=5):
         lemmatizer = WordNetLemmatizer()
         self.eval()
         doc_count = 0
@@ -326,6 +326,20 @@ class CWTM(nn.Module):
                     for w in temp_doc_count:
                         self.docCountByWord[w] = self.docCountByWord.get(w, 0) + temp_doc_count[w]
             torch.cuda.empty_cache()
+        
+        for w, c in sorted(self.docCountByWord.items(), key=lambda x:x[1], reverse=True)[:remove_top]:
+            self.word2topic.pop(w, None)
+        for w in self.docCountByWord:
+            if type(min_df) == int and self.docCountByWord[w] < min_df:
+                self.word2topic.pop(w, None)
+            elif type(min_df) == float and self.docCountByWord[w]/len(data.dataset) < min_df:
+                self.word2topic.pop(w, None)
+
+            if type(max_df) == int and self.docCountByWord[w] > max_df:
+                self.word2topic.pop(w, None)
+            elif type(max_df) == float and self.docCountByWord[w]/len(data.dataset) > max_df:
+                self.word2topic.pop(w, None) 
+
 
     def transform(self, data):
         self.eval()       
@@ -341,7 +355,7 @@ class CWTM(nn.Module):
         X = np.array(X)
         return X
     
-    def print_topics(self, top_k = 25, stopwords=[]):
+    def print_topics(self, top_k = 10, stopwords=[]):
         vobs = np.array(list(self.word2topic.keys()))
         topic2word = np.array(list(self.word2topic.values())).T
         for i in range(self.latent_size):

@@ -88,6 +88,9 @@ if __name__ == "__main__":
     train_data = DataLoader(sub_train, batch_size=BATCH, shuffle=True, num_workers = 4, pin_memory=True, collate_fn=generate_batch)
     cwtm_model.fit(train_data, N_EPOCHS)
 
+    # cwtm_model.load("./save/CWTM_20_topics_1709633826.3696485")
+    # cwtm_model.extracting_topics(train_data)
+    
     stopwords = set()
     with open("./data/stopwords.en.txt") as file:
         for word in file.readlines():
