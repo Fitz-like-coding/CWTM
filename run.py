@@ -89,25 +89,27 @@ if __name__ == "__main__":
     cwtm_model = CWTM(latent_size = latent_size, device = device).to(device)        
 
     train_data = DataLoader(sub_train, batch_size=BATCH, shuffle=True, num_workers = 4, pin_memory=True, collate_fn=generate_batch)
-    cwtm_model.fit(train_data, N_EPOCHS)
+    # cwtm_model.fit(train_data, N_EPOCHS)
 
-    # cwtm_model.load("./save/CWTM_20_topics_1709633826.3696485")
-    # cwtm_model.extracting_topics(train_data)
+    cwtm_model.load("./save/CWTM_20_topics_1709633826.3696485")
     
     stopwords = set()
     with open("./data/stopwords.en.txt") as file:
         for word in file.readlines():
             stopwords.add(word.strip())
-    topics = cwtm_model.get_topics(25, stopwords=stopwords)
+    topics = cwtm_model.get_topics(10, stopwords=stopwords)
+    
+    print("Extracting Coherence score...")
     evaluator = CoherenceEvaluator()
     score = evaluator.coherence_score(topics.values())
     print("Coherence score:", score)
 
-    evaluator = DiversityEvaluator(device=device, stopwords=stopwords, target_model=cwtm_model)
+    print("Extracting diversity score...")
+    evaluator = DiversityEvaluator(device=device, target_model=cwtm_model)
     evaluator.fit_embeddings(train_data)
-    print("Diversity score:", evaluator.diversity_score())
+    print("Diversity score:", evaluator.diversity_score(topics))
 
-    valid_data = DataLoader(sub_valid, batch_size=BATCH, shuffle=False, num_workers = 4, pin_memory=True, collate_fn=generate_batch)
+    valid_data = DataLoader(sub_valid, batch_size=BATCH, shuffle=False, num_workers = 1, pin_memory=False, collate_fn=generate_batch)
     X = cwtm_model.transform(valid_data)
     Y = sub_valid[:]['labels']
 

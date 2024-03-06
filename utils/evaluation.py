@@ -33,7 +33,7 @@ def centroid_score(model_output, topk):
 
 class CoherenceEvaluator:
     def __init__(self, endpoint="http://palmetto.aksw.org/palmetto-webapp/service/"):
-        self.palmetto = Palmetto(endpoint)
+        self.palmetto = Palmetto(endpoint, timeout=30)
 
     def get_coherence(self, words, coherence_type="cv"):
         return self.palmetto.get_coherence(words, coherence_type=coherence_type)
@@ -41,7 +41,9 @@ class CoherenceEvaluator:
     def coherence_score(self, topics, coherence_type="cv"):
         scores = []
         for words in topics:
-            scores.append(self.get_coherence(words, coherence_type))
+            score = self.get_coherence(words, coherence_type)
+            scores.append(score)
+            print(score, words)
         return np.mean(scores)
     
 class DiversityEvaluator:
@@ -59,6 +61,7 @@ class DiversityEvaluator:
 
     def fit_embeddings(self, data_generator):
         self.base_model.eval()
+        self.target_model.eval()
         for i, sample in enumerate(data_generator):
             input_ids = sample[0].to(self.device)
             attention_masks = sample[1].to(self.device)
@@ -66,7 +69,7 @@ class DiversityEvaluator:
 
             with torch.no_grad():
                 _, _, _, _, _, kw = self.target_model(input_ids, attention_masks, input_ids)
-                features = self(input_ids, attention_masks, output_hidden_states=True, output_attentions=True)
+                features = self.base_model(input_ids, attention_masks, output_hidden_states=True, output_attentions=True)
                 local_embeddings = features.hidden_states[1]
                 kw = kw * words_mask.unsqueeze(2)
 
@@ -79,7 +82,7 @@ class DiversityEvaluator:
                     for word_idx, current_token in enumerate(self.tokenizer.convert_ids_to_tokens(input_ids[sent_idx])):
                         if word_idx == 0:
                             continue
-                        if "##" in current_token:
+                        if current_token.startswith("##"):
                             previous_token += current_token.replace("##", "")
                             previous_topic += kw[sent_idx][word_idx].cpu().data.numpy()
                             previous_embeddings += local_embeddings[sent_idx][word_idx].cpu().data.numpy()
@@ -87,7 +90,7 @@ class DiversityEvaluator:
                         else:
                             previous_topic = previous_topic/c
                             previous_embeddings = previous_embeddings/c
-                            if previous_token not in ["[SEP]", "[PAD]", "[CLS]"] and previous_token not in self.stopwords:
+                            if previous_token not in ["[SEP]", "[PAD]", "[CLS]"]:
                                 if previous_token not in self.word2processed:
                                     self.word2processed[previous_token] = self.lemmatizer.lemmatize(previous_token)
                                 processed_token = self.word2processed[previous_token]
@@ -105,11 +108,11 @@ class DiversityEvaluator:
                             previous_embeddings = local_embeddings[sent_idx][word_idx].cpu().data.numpy()
                             c = 1
 
-    def diversity_score(self):
+    def diversity_score(self, topic_words = []):
         model_output = {"topics":[]}
         for i in range(self.target_model.latent_size):
-            temp = sorted([(w, self.vectorByTopics[i][w]) for w in self.vectorByTopics[i]], key=lambda x:x[1], reverse=True)
-            topic = [(w, self.vectorByTopics[i][w]["embeddings"]/self.vectorByTopics[i][w]["weight"]) for w in temp if w not in self.stopwords][:10]
+            temp = [(w, self.vectorByTopics[i][w]['weight']) for w in topic_words[i]]
+            topic = [(item[0], self.vectorByTopics[i][item[0]]["embeddings"]/self.vectorByTopics[i][item[0]]["weight"]) for item in temp]
             model_output["topics"].append(topic)
             print('topic {index}: {words}'.format(index = i, words=[w[0] for w in topic]))
         dcscore = centroid_score(model_output, 10)
