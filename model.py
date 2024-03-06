@@ -315,12 +315,12 @@ class CWTM(nn.Module):
             with torch.no_grad():
                 _, _, _, _, theta, kw = self(input_ids, attention_masks.clone(), input_ids)
                 kw = kw * words_mask.unsqueeze(2)
-                temp_doc_count = {}
                 for sent_idx, input_id in enumerate(input_ids):
                     doc_count += 1
                     previous_token = "[CLS]"
                     previous_topic = kw[sent_idx][0].cpu().data.numpy()
                     c = 1
+                    temp_doc_count = {}
                     for word_idx, current_token in enumerate(self.tokenizer.convert_ids_to_tokens(input_id)):
                         if word_idx == 0:
                             continue
@@ -347,7 +347,7 @@ class CWTM(nn.Module):
             torch.cuda.empty_cache()
 
         for w, c in sorted(self.docCountByWord.items(), key=lambda x:x[1], reverse=True)[:remove_top]:
-            print(w)
+            print(w, c)
             self.word2topic.pop(w, None)
         for w in self.docCountByWord:
             if type(min_df) == int and self.docCountByWord[w] < min_df:
