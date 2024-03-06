@@ -337,8 +337,6 @@ class CWTM(nn.Module):
                             previous_topic = previous_topic/c
                             if previous_token not in ["[SEP]", "[PAD]", "[CLS]"] and not re.search("\W|\d", previous_token) and previous_token not in stopwords:
                                 token = lemmatizer.lemmatize(previous_token)
-                                if token in ["gt", "lt", "ly", "bt"]:
-                                    print(self.tokenizer.convert_ids_to_tokens(input_id))
                                 temp_doc_count[token] = 1
                                 dist = previous_topic 
                                 try:
