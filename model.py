@@ -297,6 +297,10 @@ class CWTM(nn.Module):
         with open("./data/stopwords.en.txt") as file:
             for word in file.readlines():
                 stopwords.add(word.strip())
+        stopwords2 = []
+        for word in stopwords:
+            stopwords2.extend(self.tokenizer.tokenize(word))
+        stopwords.update(stopwords2)
         self.extracting_topics(data_generator, stopwords=stopwords)
         current_time = time.time()
         self.save(path=f"./save/CWTM_{self.latent_size}_topics_{current_time}")
@@ -312,6 +316,7 @@ class CWTM(nn.Module):
             attention_masks = sample[1].to(self.device)
             words_mask = sample[2].to(self.device)
             cls = sample[3].to(self.device)
+            sents = sample[4]
             with torch.no_grad():
                 _, _, _, _, theta, kw = self(input_ids, attention_masks.clone(), input_ids)
                 kw = kw * words_mask.unsqueeze(2)
@@ -330,8 +335,10 @@ class CWTM(nn.Module):
                             c += 1
                         else:
                             previous_topic = previous_topic/c
-                            if previous_token not in ["[SEP]", "[PAD]", "[CLS]"] and not re.search("[^a-zA-Z]", previous_token) and previous_token not in stopwords:
+                            if previous_token not in ["[SEP]", "[PAD]", "[CLS]"] and not re.search("\W|\d", previous_token) and previous_token not in stopwords:
                                 token = lemmatizer.lemmatize(previous_token)
+                                if token in ["gt", "lt", "ly", "bt"]:
+                                    print(self.tokenizer.convert_ids_to_tokens(input_id))
                                 temp_doc_count[token] = 1
                                 dist = previous_topic 
                                 try:

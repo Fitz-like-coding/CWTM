@@ -63,7 +63,7 @@ if __name__ == "__main__":
     # for config_dataset in ["20news", "TagMyNews", "Dbpedia14", "TwitterEmotion", "AGNews"]:
     config_dataset = "TwitterEmotion"
     if config_dataset == "20news":
-        N_EPOCHS = 1
+        N_EPOCHS = 20
         sub_train = TwentyNewsDataset(subset="train")
         sub_valid = TwentyNewsDataset(subset="test")
     elif config_dataset == "TagMyNews":
@@ -89,15 +89,21 @@ if __name__ == "__main__":
     cwtm_model = CWTM(latent_size = latent_size, device = device).to(device)        
 
     train_data = DataLoader(sub_train, batch_size=BATCH, shuffle=True, num_workers = 4, pin_memory=True, collate_fn=generate_batch)
-    # cwtm_model.fit(train_data, N_EPOCHS)
+    cwtm_model.fit(train_data, N_EPOCHS)
 
-    cwtm_model.load("./save/CWTM_20_topics_1709633826.3696485")
-    cwtm_model.word2topic = {}
-    stopwords = set()
-    with open("./data/stopwords.en.txt") as file:
-        for word in file.readlines():
-            stopwords.add(word.strip())
-    cwtm_model.extracting_topics(train_data, remove_top=10, stopwords=stopwords)
+    # cwtm_model.load("./save/CWTM_20_topics_1709658726.626927")
+    # from torch import nn
+    # cwtm_model.dropout = nn.Dropout(p=0.0)
+    # cwtm_model.word2topic = {}
+    # stopwords = set()
+    # with open("./data/stopwords.en.txt") as file:
+    #     for word in file.readlines():
+    #         stopwords.add(word.strip())
+    # stopwords2 = []
+    # for word in stopwords:
+    #     stopwords2.extend(cwtm_model.tokenizer.tokenize(word))
+    # stopwords.update(stopwords2)
+    # cwtm_model.extracting_topics(train_data, remove_top=10, stopwords=stopwords)
     topics = cwtm_model.get_topics(10)
 
     print("Extracting Coherence score...")
