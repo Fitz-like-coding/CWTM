@@ -249,6 +249,11 @@ class CWTM(nn.Module):
 
             self.train()
             train_loss = []
+            train_topic_word_loss = []
+            train_document_topic_loss = []
+            train_mutual_information_loss = []
+            train_mlm_loss = []
+            train_recon_loss = []
             for batch_idx, sample in tqdm(enumerate(data_generator), total=len(data_generator)):
                 input = sample[0].to(self.device)
                 attention_masks = sample[1].to(self.device)
@@ -269,6 +274,11 @@ class CWTM(nn.Module):
                 optimizer.step()
                 lr_scheduler.step()
                 train_loss.append(loss.item())
+                train_topic_word_loss.append(topic_word_loss.item())
+                train_document_topic_loss.append(document_topic_loss.item())
+                train_mutual_information_loss.append(mutual_information_loss.item())
+                train_mlm_loss.append(mlm_loss.item())
+                train_recon_loss.append(recon_loss.item())
                 torch.cuda.empty_cache()
 
             secs = int(time.time() - start_time)
@@ -276,6 +286,11 @@ class CWTM(nn.Module):
             secs = secs % 60
             print('Epoch: %d' %(epoch + 1), " | time in %d minutes, %d seconds" %(mins, secs))
             print(f'\ttrain Loss: {np.mean(train_loss):.4f}')
+            print(f'\ttrain train_topic_word_loss: {np.mean(train_topic_word_loss):.4f}')
+            print(f'\ttrain train_document_topic_loss: {np.mean(train_document_topic_loss):.4f}')
+            print(f'\ttrain train_mutual_information_loss: {np.mean(train_mutual_information_loss):.4f}')
+            print(f'\ttrain train_mlm_loss: {np.mean(train_mlm_loss):.4f}')
+            print(f'\ttrain train_recon_loss: {np.mean(train_recon_loss):.4f}')
 
         print("extracting topic words...")
         stopwords = set()
