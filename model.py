@@ -278,13 +278,17 @@ class CWTM(nn.Module):
             print(f'\ttrain Loss: {np.mean(train_loss):.4f}')
 
         print("extracting topic words...")
-        self.extracting_topics(data_generator)
+        stopwords = set()
+        with open("./data/stopwords.en.txt") as file:
+            for word in file.readlines():
+                stopwords.add(word.strip())
+        self.extracting_topics(data_generator, stopwords=stopwords)
         current_time = time.time()
         self.save(path=f"./save/CWTM_{self.latent_size}_topics_{current_time}")
         print("Training finished")
         return 
     
-    def extracting_topics(self, data, min_df=3, max_df=0.5, remove_top=5):
+    def extracting_topics(self, data, min_df=3, max_df=0.5, remove_top=10, stopwords=[]):
         lemmatizer = WordNetLemmatizer()
         self.eval()
         doc_count = 0
@@ -311,7 +315,7 @@ class CWTM(nn.Module):
                             c += 1
                         else:
                             previous_topic = previous_topic/c
-                            if previous_token not in ["[SEP]", "[PAD]", "[CLS]"]:
+                            if previous_token not in ["[SEP]", "[PAD]", "[CLS]"] and not re.search("[^a-zA-Z]", previous_token) and previous_token not in stopwords:
                                 token = lemmatizer.lemmatize(previous_token)
                                 temp_doc_count[token] = 1
                                 dist = previous_topic 
@@ -326,8 +330,9 @@ class CWTM(nn.Module):
                     for w in temp_doc_count:
                         self.docCountByWord[w] = self.docCountByWord.get(w, 0) + temp_doc_count[w]
             torch.cuda.empty_cache()
-        
+
         for w, c in sorted(self.docCountByWord.items(), key=lambda x:x[1], reverse=True)[:remove_top]:
+            print(w)
             self.word2topic.pop(w, None)
         for w in self.docCountByWord:
             if type(min_df) == int and self.docCountByWord[w] < min_df:
@@ -355,12 +360,12 @@ class CWTM(nn.Module):
         X = np.array(X)
         return X
     
-    def get_topics(self, top_k = 10, stopwords=[]):
+    def get_topics(self, top_k = 10):
         vobs = np.array(list(self.word2topic.keys()))
         topic2word = np.array(list(self.word2topic.values())).T
         topics = {}
         for i in range(self.latent_size):
-            topics[i] = [w for w in vobs[topic2word[i].argsort()[::-1]] if w not in stopwords and not re.search("[^a-zA-Z]", w)][:top_k]
+            topics[i] = [w for w in vobs[topic2word[i].argsort()[::-1]]][:top_k]
             topic = ", ".join(topics[i])
             print('topic {index}: {words}'.format(index = i, words=topic))
         return topics

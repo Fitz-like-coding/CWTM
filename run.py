@@ -92,13 +92,14 @@ if __name__ == "__main__":
     # cwtm_model.fit(train_data, N_EPOCHS)
 
     cwtm_model.load("./save/CWTM_20_topics_1709633826.3696485")
-    
+    cwtm_model.word2topic = {}
     stopwords = set()
     with open("./data/stopwords.en.txt") as file:
         for word in file.readlines():
             stopwords.add(word.strip())
-    topics = cwtm_model.get_topics(10, stopwords=stopwords)
-    
+    cwtm_model.extracting_topics(train_data, remove_top=10, stopwords=stopwords)
+    topics = cwtm_model.get_topics(10)
+
     print("Extracting Coherence score...")
     evaluator = CoherenceEvaluator()
     score = evaluator.coherence_score(topics.values())
