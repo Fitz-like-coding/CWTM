@@ -262,7 +262,9 @@ class CWTM(nn.Module):
 
                 optimizer.zero_grad()
                 masked_input = self.getMaskedInput(input, words_mask)
-                local_embeddings, global_embeddings, mlm_loss, reconstructed, document_topic, topic_word = self(masked_input, attention_masks, input)
+                labels = input.clone()
+                labels[labels==0] = -100
+                local_embeddings, global_embeddings, mlm_loss, reconstructed, document_topic, topic_word = self(masked_input, attention_masks, labels)
                 topic_word_loss = self.topic_word_loss(topic_word, words_mask, input)
                 document_topic_loss = self.document_topic_loss(document_topic)
                 mutual_information_loss = self.mutual_information_loss(local_embeddings, global_embeddings, attention_masks)
