@@ -1,10 +1,13 @@
 from datasets import load_dataset
 from sklearn.datasets import fetch_20newsgroups
 from torch.utils.data import Dataset
+from preprocessor import *
 import pandas as pd
 import numpy as np
 import torch
 import re
+stopwords = read_stopwords("../data/stopwords.en.txt")
+processor = preprocessor(stopwords)
 
 class TwentyNewsDataset(Dataset):
     """20news dataset."""
@@ -24,6 +27,13 @@ class TwentyNewsDataset(Dataset):
         texts = []
         labels = []
         for i in range(len(corpus.data[:])):
+            # add this block of code if want to reprode the results in the paper
+            temp = " ".join([w for w in corpus.data[i].split()])
+            temp2 = processor.preprocess(temp)
+            if len(temp2) == 0:
+                continue
+            #
+
             texts.append(" ".join([w for w in corpus.data[i].split()]))
             labels.append(corpus.target[i])
 
@@ -87,6 +97,10 @@ class TagMyNewsDataset(Dataset):
         texts = []
         labels = []
         for i in range(len(data[:])):
+            temp = " ".join([w for w in data[i].split()])
+            temp2 = processor.preprocess(temp)
+            if len(temp2) == 0:
+                continue
             texts.append(" ".join([w for w in data[i].split()]))
             labels.append(["business", "entertainment", "health", "sci_tech", "sport", "us", "world"].index(targets[i]))
         
@@ -127,6 +141,10 @@ class Dbpedia14Dataset(Dataset):
         texts = []
         labels = []
         for i in range(len(data)):
+            temp = " ".join([w for w in data[i]['content'].split()])
+            temp2 = processor.preprocess(temp)
+            if len(temp2) == 0:
+                continue
             texts.append(" ".join([w for w in data[i]['content'].split()]))
             labels.append(data[i]["label"])
 
@@ -160,6 +178,10 @@ class TwitterEmotion3(Dataset):
         texts = []
         labels = []
         for i in range(len(data)):
+            temp = " ".join([w for w in data[i]['text'].split()])
+            temp2 = processor.preprocess(temp)
+            if len(temp2) == 0:
+                continue
             texts.append(" ".join([w for w in data[i]['text'].split()]))
             labels.append(data[i]["label"])
 
@@ -193,6 +215,10 @@ class AGNews(Dataset):
         texts = []
         labels = []
         for i in range(len(data)):
+            temp = " ".join([w for w in data[i]['text'].split()])
+            temp2 = processor.preprocess(temp)
+            if len(temp2) == 0:
+                continue
             texts.append(" ".join([w for w in data[i]['text'].split()]))
             labels.append(data[i]["label"])
 
