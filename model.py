@@ -354,7 +354,6 @@ class CWTM(nn.Module):
             torch.cuda.empty_cache()
 
         for w, c in sorted(self.docCountByWord.items(), key=lambda x:x[1], reverse=True)[:remove_top]:
-            print(w, c)
             self.word2topic.pop(w, None)
         for w in self.docCountByWord:
             if type(min_df) == int and self.docCountByWord[w] < min_df:
