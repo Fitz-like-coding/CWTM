@@ -23,3 +23,13 @@ output = model.transform(texts)
 print(output['document_topic_distributions'])
 print(output['word_topic_distributions'])
 ```
+
+**save fitted model**
+```python
+model.save(path="my save path")
+```
+
+**load fitted model**
+```python
+model.load(path="my save path")
+```
