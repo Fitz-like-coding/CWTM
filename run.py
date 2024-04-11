@@ -25,20 +25,6 @@ os.environ["TOKENIZERS_PARALLELISM"]="false"
 device = torch.device("cuda:3" if torch.cuda.is_available() else "cpu")
 print (device)
 
-tokenizer = BertTokenizerFast.from_pretrained('bert-base-uncased')
-def generate_batch(batch):
-    encoding = tokenizer([str(entry["texts"]) for entry in batch], return_tensors="pt", padding="longest", truncation=True, max_length=502)
-    label = torch.tensor([entry["labels"][0] for entry in batch])
-
-    words_mask = encoding['attention_mask'].clone()
-    length = encoding['attention_mask'].sum(1)
-
-    words_mask[torch.arange(length.size(0)), 0] = 0
-    words_mask[torch.arange(length.size(0)), length-1] = 0
-
-    sentences = [str(entry["texts"]) for entry in batch]
-    return encoding['input_ids'].type(torch.LongTensor), encoding['attention_mask'].type(torch.LongTensor), words_mask.type(torch.LongTensor), label.type(torch.LongTensor), sentences
-
 def purity_score(y_true, y_pred):
     contingency = contingency_matrix(y_true, y_pred)
     return np.sum(np.amax(contingency, axis=0)) / np.sum(contingency)
@@ -55,9 +41,6 @@ def cluster_acc(Y_pred, Y):
     ind = np.asarray(ind)
     ind = np.transpose(ind)
     return sum([w[i,j] for i,j in ind])*1.0/Y_pred.size, w
-
-def read_stopwords(fn):
-    return set([line.strip() for line in open(fn, encoding='utf-8') if len(line.strip()) != 0])
 
 if __name__ == "__main__":
     # for config_dataset in ["20news", "TagMyNews", "Dbpedia14", "TwitterEmotion", "AGNews"]:
@@ -87,8 +70,6 @@ if __name__ == "__main__":
     BATCH = 16
     latent_size = 20
     cwtm_model = CWTM(latent_size = latent_size, device = device).to(device)        
-
-    train_data = DataLoader(sub_train, batch_size=BATCH, shuffle=True, num_workers = 4, pin_memory=True, collate_fn=generate_batch)
     cwtm_model.fit(train_data, N_EPOCHS)
 
     # cwtm_model.load("./save/CWTM_20_topics_1709658726.626927")

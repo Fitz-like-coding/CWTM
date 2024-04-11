@@ -21,13 +21,13 @@ class PrefixEncoder(torch.nn.Module):
     Input shape: (batch-size, prefix-length)
     Output shape: (batch-size, prefix-length, 2*layers*hidden)
     '''
-    def __init__(self):
+    def __init__(self, hidden_size=768, prefix_hidden_size=512, pre_seq_len=10, num_hidden_layers=12, prefix_projection=True):
         super().__init__()
-        self.hidden_size = 768
-        self.prefix_projection = True
-        self.pre_seq_len = 10
-        self.prefix_hidden_size = 512
-        self.num_hidden_layers = 12
+        self.hidden_size = hidden_size
+        self.prefix_projection = prefix_projection
+        self.pre_seq_len = pre_seq_len
+        self.prefix_hidden_size = prefix_hidden_size
+        self.num_hidden_layers = num_hidden_layers
         if self.prefix_projection:
             # Use a two-layer MLP to encode the prefix
             self.embedding = torch.nn.Embedding(self.pre_seq_len, self.hidden_size)
@@ -80,13 +80,13 @@ class CWTM(nn.Module):
         self.vocab_size = self.backbone.config.vocab_size
         self.max_length = self.backbone.config.max_position_embeddings
 
-        self.prefix_encoder = PrefixEncoder()
         self.pre_seq_len = pre_seq_len
         self.n_layer = self.backbone.config.num_hidden_layers
         self.n_head = self.backbone.config.num_attention_heads 
         self.n_embd = self.backbone.config.hidden_size // self.n_head
         self.prefix_tokens = torch.arange(self.pre_seq_len).long()
-
+        self.prefix_encoder = PrefixEncoder(pre_seq_len=self.pre_seq_len)
+        
         self.tran1 = copy.deepcopy(self.backbone.bert.encoder.layer[-1])
         self.tran2 = copy.deepcopy(self.backbone.bert.encoder.layer[-1])
 
