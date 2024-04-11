@@ -7,8 +7,8 @@ This is the source code for the LREC-COLING 2024 main conference paper:
 ```python
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 texts = ['A woman is reading.', 'A man is playing a guitar.', 'A girl is eating an apple.', 'A boy is sitting under a tree.']
-model = CWTM(num_topics=20, iterations=20, backbone='bert-base-uncased', device=device)        
-model.fit(texts)
+model = CWTM(num_topics=20, backbone='bert-base-uncased', device=device)        
+model.fit(texts, iterations=20)
 ```
 
 **Print top words of each topic**
@@ -16,16 +16,10 @@ model.fit(texts)
 model.get_topics(top_k=10)
 ```
 
-**Transform texts to document-topic distributions according to the fitted model**
+**Transform texts to get document-topic and word-topic distributions**
 ```python
 texts = ['A woman is reading.', 'A man is playing a guitar.', 'A girl is eating an apple.', 'A boy is sitting under a tree.']
 output = model.transform(texts)
 print(output['document_topic_distributions'])
-```
-
-**Print top words of each topic**
-```python
-texts = ['A woman is reading.', 'A man is playing a guitar.', 'A girl is eating an apple.', 'A boy is sitting under a tree.']
-output = model.transform(texts)
 print(output['word_topic_distributions'])
 ```
