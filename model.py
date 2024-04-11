@@ -7,6 +7,7 @@ import numpy as np
 from torch import nn
 from torch.nn import CrossEntropyLoss
 from torch.nn import functional as F
+from torch.utils.data import DataLoader
 from transformers import BertForMaskedLM, BertTokenizerFast, AdamW, get_scheduler
 from nltk.stem import PorterStemmer, WordNetLemmatizer
 from tqdm import tqdm
@@ -48,55 +49,63 @@ class PrefixEncoder(torch.nn.Module):
         return past_key_values
 
 class CWTM(nn.Module):
-    def __init__(self, latent_size = 20, device = "cpu"):
+    def __init__(self, 
+                 num_topics = 20, 
+                 backbone = "bert-base-uncased", 
+                 pre_seq_len = 10,
+                 dropout_rate = 0.2,
+                 doc_topic_prior = 0.1,
+                 topic_word_prior = 0.1,
+                 lr=1e-3, 
+                 eps=1e-6, 
+                 weight_decay=0.01,
+                 device = "cpu"):
         """
         Initialize InferenceNetwork.
         Args
             latent_size : int, number of topic components, (default 20)
         """
         super(CWTM, self).__init__()
+        self.lr = lr
+        self.eps = eps
+        self.weight_decay = weight_decay
+        self.doc_topic_prior = doc_topic_prior
+        self.topic_word_prior = topic_word_prior
+        
         self.device = device
-        self.encoder = BertForMaskedLM.from_pretrained("bert-base-uncased")
-        self.tokenizer = BertTokenizerFast.from_pretrained('bert-base-uncased')
-        self.latent_size = latent_size
-        self.hidden_size = self.encoder.config.hidden_size
-        self.vocab_size = self.encoder.config.vocab_size
-        self.word2topic = {}
-        self.docCountByWord = {}
+        self.backbone = BertForMaskedLM.from_pretrained(backbone)
+        self.tokenizer = BertTokenizerFast.from_pretrained(backbone)
+        self.latent_size = num_topics
+        self.hidden_size = self.backbone.config.hidden_size
+        self.vocab_size = self.backbone.config.vocab_size
+        self.max_length = self.backbone.config.max_position_embeddings
 
-        self.prefix_encoder = PrefixEncoder().to(self.device)
-        self.pre_seq_len = 10
-        self.n_layer = 12
-        self.n_head = 12 
-        self.n_embd = 64
-        self.prefix_tokens = torch.arange(self.pre_seq_len).long().to(self.device)
-        for param in self.prefix_encoder.parameters():
-            param.requires_grad = True
+        self.prefix_encoder = PrefixEncoder()
+        self.pre_seq_len = pre_seq_len
+        self.n_layer = self.backbone.config.num_hidden_layers
+        self.n_head = self.backbone.config.num_attention_heads 
+        self.n_embd = self.backbone.config.hidden_size // self.n_head
+        self.prefix_tokens = torch.arange(self.pre_seq_len).long()
 
-        for param in self.encoder.bert.parameters():
-            param.requires_grad = False
+        self.tran1 = copy.deepcopy(self.backbone.bert.encoder.layer[-1])
+        self.tran2 = copy.deepcopy(self.backbone.bert.encoder.layer[-1])
 
-        for param in self.encoder.cls.parameters():
-            param.requires_grad = False
-
-        self.encoder2 = copy.deepcopy(self.encoder.bert.encoder.layer[-1:])
-        for param in self.encoder2.parameters():
-            param.requires_grad = True
-
-        self.encoder3 = copy.deepcopy(self.encoder.bert.encoder.layer[-1:])
-        for param in self.encoder3.parameters():
-            param.requires_grad = True
-
-        self.fc = nn.Linear(in_features=self.hidden_size, out_features=256)
-        self.fc2 = nn.Linear(in_features=256, out_features=self.latent_size)
-        self.fc3 = nn.Linear(in_features=self.latent_size, out_features=256)
-        self.fc4 = nn.Linear(in_features=256, out_features=768)
+        self.fc = nn.Linear(in_features=self.hidden_size, out_features=self.hidden_size)
+        self.fc2 = nn.Linear(in_features=self.hidden_size, out_features=self.latent_size)
+        self.fc3 = nn.Linear(in_features=self.latent_size, out_features=self.hidden_size)
+        self.fc4 = nn.Linear(in_features=self.hidden_size, out_features=self.hidden_size)
         self.fc5 = nn.Linear(in_features=self.hidden_size, out_features=1)
 
-        self.dropout = nn.Dropout(p=0.5)
+        self.dropout = nn.Dropout(p=dropout_rate)
 
-        [self._init_weights(p) for n, p in self.encoder2.named_parameters()]
-        [self._init_weights(p) for n, p in self.encoder3.named_parameters()]
+        [self._init_weights(p) for _, p in self.tran1.named_parameters()]
+        [self._init_weights(p) for _, p in self.tran2.named_parameters()]
+
+        for param in self.backbone.bert.parameters():
+            param.requires_grad = False
+
+        self.word2topic = {}
+        self.docCountByWord = {}
 
     def _init_weights(self, module):
         """ Initialize the weights """
@@ -131,56 +140,53 @@ class CWTM(nn.Module):
         prefix_attention_mask = torch.ones(input_ids.shape[0], self.pre_seq_len).to(self.device)
         attention_masks_prom = torch.cat((prefix_attention_mask, attention_masks), dim=1)
         
-        # get word embedding from Bert
-        features = self.encoder.bert(input_ids, 
+        # get word embeddings from Bert
+        features = self.backbone.bert(input_ids, 
                                 attention_masks_prom, 
                                 head_mask=None, 
                                 output_hidden_states=True, 
                                 output_attentions=True,
                                 past_key_values=past_key_values[:12])
         
-        local_embeddings = features.hidden_states[-1]
+        word_embeddings = features.hidden_states[-1]
 
-        extended_attention_mask = self.encoder.get_extended_attention_mask(attention_masks, input_ids.size(), self.device)
-        for _, l in enumerate(self.encoder2):
-            mu = l(local_embeddings, extended_attention_mask, None, output_attentions=True)[0]
-        global_embeddings = mu[:, 0]
+        extended_attention_mask = self.backbone.get_extended_attention_mask(attention_masks, input_ids.size(), self.device)
+        sentence_embeddings = self.tran1(word_embeddings, extended_attention_mask, None, output_attentions=True)[0][:, 0]
 
-        kw = self.fc(local_embeddings)
-        kw = F.leaky_relu(kw)
-        kw = self.fc2(kw)
-        kw = torch.softmax(kw, dim=2)
+        word_topics = self.fc(word_embeddings)
+        word_topics = F.leaky_relu(word_topics)
+        word_topics = self.fc2(word_topics)
+        word_topics = torch.softmax(word_topics, dim=2)
 
-        for _, l in enumerate(self.encoder3):
-            alphas = l(local_embeddings, extended_attention_mask, None, output_attentions=True)[0]
+        alphas = self.tran2(word_embeddings, extended_attention_mask, None, output_attentions=True)[0]
         alphas = torch.sigmoid(self.fc5(alphas))
-        word_topic = kw * alphas
-        kz = (word_topic * attention_masks.unsqueeze(2)).sum(1) + 1e-20
-        doc_topic = kz/kz.sum(1).unsqueeze(1) 
+        word_topics = word_topics * alphas
+        doc_topics = (word_topics * attention_masks.unsqueeze(2)).sum(1) + 1e-9
+        doc_topics = doc_topics/doc_topics.sum(1).unsqueeze(1) 
 
-        reconstructed = F.leaky_relu(self.fc3(doc_topic))
+        reconstructed = F.leaky_relu(self.fc3(doc_topics))
         reconstructed = self.fc4(reconstructed)
 
-        hidden_embeddings = self.encoder.cls(local_embeddings)
+        hidden_embeddings = self.backbone.cls(word_embeddings)
         loss_fct = CrossEntropyLoss()
         mlm_loss = loss_fct(hidden_embeddings.view(-1, self.vocab_size), labels.view(-1))
 
-        return local_embeddings, global_embeddings, mlm_loss, reconstructed, doc_topic, word_topic
+        return word_embeddings, sentence_embeddings, mlm_loss, reconstructed, doc_topics, word_topics
     
-    def getMaskedInput(self, input_ids, words_mask, rate = 0.15, mask_rate = 0.8, replace_rate = 0.1):
+    def getMaskedInput(self, input_ids, attention_masks, rate = 0.15, mask_rate = 0.8, replace_rate = 0.1):
         p = torch.ones(input_ids.size()) * rate
         noise_mask = torch.bernoulli(p).to(self.device)
-        fake_index = (noise_mask * words_mask) == 1
+        fake_index = (noise_mask * attention_masks) == 1
         input = input_ids.clone()
 
         p = torch.ones(input_ids.size()) * mask_rate
         noise_mask2 = torch.bernoulli(p).to(self.device)
-        fake_index2 = (noise_mask2 * (noise_mask * words_mask)) == 1
-        input[fake_index2] = 103
+        fake_index2 = (noise_mask2 * (noise_mask * attention_masks)) == 1
+        input[fake_index2] = self.tokenizer.convert_tokens_to_ids(self.tokenizer.mask_token)
 
         p = torch.ones(input_ids.size()) * replace_rate
         noise_mask3 = torch.bernoulli(p).to(self.device)
-        fake_index3 = (noise_mask3 * (noise_mask * words_mask - noise_mask * words_mask * noise_mask2)) == 1
+        fake_index3 = (noise_mask3 * (noise_mask * attention_masks - noise_mask * attention_masks * noise_mask2)) == 1
         input[fake_index3] = torch.randint(0, self.vocab_size, (fake_index3.sum(),)).to(self.device)
         return input
     
@@ -241,10 +247,20 @@ class CWTM(nn.Module):
                 file.write("\n")
         print(f"Save model to {path}.")
 
-    def fit(self, data_generator, n_epochs):
-        optimizer = self.get_optimizer(lr=1e-3, eps=1e-6, weight_decay=0.01)
-        lr_scheduler = self.get_scheduler(n_epochs, optimizer, data_generator)
-        for epoch in range(n_epochs):
+    def generate_batch(self, batch):
+        encoding = self.tokenizer([str(entry) for entry in batch], return_tensors="pt", padding="longest", truncation=True, max_length=self.max_length)
+        words_mask = encoding['attention_mask'].clone()
+        length = encoding['attention_mask'].sum(1)
+        words_mask[torch.arange(length.size(0)), 0] = 0
+        words_mask[torch.arange(length.size(0)), length-1] = 0
+        return encoding['input_ids'].type(torch.LongTensor), encoding['attention_mask'].type(torch.LongTensor), words_mask.type(torch.LongTensor)
+
+    def fit(self, texts, iterations=20, batch_size=8):
+        print("training the model...")
+        data_generator = DataLoader(texts, batch_size=batch_size, collate_fn=self.generate_batch)
+        optimizer = self.get_optimizer(lr=self.lr, eps=self.eps, weight_decay=self.weight_decay)
+        lr_scheduler = self.get_scheduler(iterations, optimizer, data_generator)
+        for epoch in range(iterations):
             start_time = time.time()
 
             self.train()
@@ -254,11 +270,10 @@ class CWTM(nn.Module):
             train_mutual_information_loss = []
             train_mlm_loss = []
             train_recon_loss = []
-            for batch_idx, sample in tqdm(enumerate(data_generator), total=len(data_generator)):
+            for _, sample in tqdm(enumerate(data_generator), total=len(data_generator)):
                 input = sample[0].to(self.device)
                 attention_masks = sample[1].to(self.device)
                 words_mask = sample[2].to(self.device)
-                cls = sample[3].to(self.device)
 
                 optimizer.zero_grad()
                 masked_input = self.getMaskedInput(input, words_mask)
@@ -304,8 +319,6 @@ class CWTM(nn.Module):
             stopwords2.extend(self.tokenizer.tokenize(word))
         stopwords.update(stopwords2)
         self.extracting_topics(data_generator, stopwords=stopwords)
-        current_time = time.time()
-        self.save(path=f"./save/CWTM_{self.latent_size}_topics_{current_time}")
         print("Training finished")
         return 
     
@@ -317,8 +330,6 @@ class CWTM(nn.Module):
             input_ids = sample[0].to(self.device)
             attention_masks = sample[1].to(self.device)
             words_mask = sample[2].to(self.device)
-            cls = sample[3].to(self.device)
-            sents = sample[4]
             with torch.no_grad():
                 _, _, _, _, theta, kw = self(input_ids, attention_masks.clone(), input_ids)
                 kw = kw * words_mask.unsqueeze(2)
