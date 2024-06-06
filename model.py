@@ -15,6 +15,8 @@ import nltk
 import json
 from nltk.corpus import stopwords
 nltk.download('stopwords')
+nltk.download('wordnet')
+
 class PrefixEncoder(torch.nn.Module):
     r'''
     The torch.nn model to encode the prefix
@@ -78,7 +80,7 @@ class CWTM(nn.Module):
         self.latent_size = num_topics
         self.hidden_size = self.backbone.config.hidden_size
         self.vocab_size = self.backbone.config.vocab_size
-        self.max_length = self.backbone.config.max_position_embeddings
+        self.max_length = self.backbone.config.max_position_embeddings - pre_seq_len
 
         self.pre_seq_len = pre_seq_len
         self.n_layer = self.backbone.config.num_hidden_layers
@@ -106,6 +108,8 @@ class CWTM(nn.Module):
 
         self.word2topic = {}
         self.docCountByWord = {}
+
+        self = self.to(self.device)
 
     def _init_weights(self, module):
         """ Initialize the weights """
@@ -161,8 +165,9 @@ class CWTM(nn.Module):
         alphas = self.tran2(word_embeddings, extended_attention_mask, None, output_attentions=True)[0]
         alphas = torch.sigmoid(self.fc5(alphas))
         word_topics = word_topics * alphas
-        doc_topics = (word_topics * attention_masks.unsqueeze(2)).sum(1) + 1e-9
-        doc_topics = doc_topics/doc_topics.sum(1).unsqueeze(1) 
+        doc_topics = (word_topics * attention_masks.unsqueeze(2)).sum(1)
+        doc_topics_sum = torch.clamp(doc_topics.sum(1), min=1e-9)
+        doc_topics = doc_topics/doc_topics_sum.unsqueeze(1) 
 
         reconstructed = F.leaky_relu(self.fc3(doc_topics))
         reconstructed = self.fc4(reconstructed)
@@ -176,7 +181,6 @@ class CWTM(nn.Module):
     def getMaskedInput(self, input_ids, attention_masks, rate = 0.15, mask_rate = 0.8, replace_rate = 0.1):
         p = torch.ones(input_ids.size()) * rate
         noise_mask = torch.bernoulli(p).to(self.device)
-        fake_index = (noise_mask * attention_masks) == 1
         input = input_ids.clone()
 
         p = torch.ones(input_ids.size()) * mask_rate
@@ -210,10 +214,10 @@ class CWTM(nn.Module):
                 {'params': self.fc4.parameters()},
                 {'params': self.fc5.parameters()},
                 {'params': self.prefix_encoder.parameters()},
-                {'params': [p for n, p in self.encoder2.named_parameters() if not any(nd in n for nd in no_decay)], 'weight_decay': weight_decay},
-                {'params': [p for n, p in self.encoder2.named_parameters() if any(nd in n for nd in no_decay)], 'weight_decay': 0.0},
-                {'params': [p for n, p in self.encoder3.named_parameters() if not any(nd in n for nd in no_decay)], 'weight_decay': weight_decay},
-                {'params': [p for n, p in self.encoder3.named_parameters() if any(nd in n for nd in no_decay)], 'weight_decay': 0.0},
+                {'params': [p for n, p in self.tran1.named_parameters() if not any(nd in n for nd in no_decay)], 'weight_decay': weight_decay},
+                {'params': [p for n, p in self.tran1.named_parameters() if any(nd in n for nd in no_decay)], 'weight_decay': 0.0},
+                {'params': [p for n, p in self.tran2.named_parameters() if not any(nd in n for nd in no_decay)], 'weight_decay': weight_decay},
+                {'params': [p for n, p in self.tran2.named_parameters() if any(nd in n for nd in no_decay)], 'weight_decay': 0.0},
             ],
             lr=lr, eps=eps, weight_decay=weight_decay, correct_bias=True)
         return optimizer
@@ -378,19 +382,24 @@ class CWTM(nn.Module):
                 self.word2topic.pop(w, None) 
 
 
-    def transform(self, data):
+    def transform(self, texts, batch_size=8):
         self.eval()       
-        X = []
-        for _, sample in enumerate(data):
+        document_topic_distributions = []
+        word_topic_distributions = []
+        data_generator = DataLoader(texts, batch_size=batch_size, collate_fn=self.generate_batch, shuffle=False)
+        for _, sample in enumerate(data_generator):
                 input_ids = sample[0].to(self.device)
                 attention_masks = sample[1].to(self.device)
                 words_mask = sample[2].to(self.device)
                 with torch.no_grad():
                     # for topic model
-                    _, _, _, _, theta, _ = self(input_ids.clone(), attention_masks.clone(), input_ids.clone())
-                    X.extend(theta.cpu().data.numpy())
-        X = np.array(X)
-        return X
+                    _, _, _, _, doc_topic, word_topic = self(input_ids.clone(), attention_masks.clone(), input_ids.clone())
+                    document_topic_distributions.extend(doc_topic.cpu().data.numpy())
+                    word_topic = (word_topic * words_mask.unsqueeze(2)).cpu().data.numpy()
+                    word_topic_distributions.extend(word_topic)
+        document_topic_distributions = np.array(document_topic_distributions)
+        word_topic_distributions = np.array(word_topic_distributions)
+        return {'document_topic_distributions': document_topic_distributions, 'word_topic_distributions': word_topic_distributions}
     
     def get_topics(self, top_k = 10):
         vobs = np.array(list(self.word2topic.keys()))
