@@ -4,21 +4,21 @@ from sklearn.datasets import fetch_20newsgroups
 
 if __name__ == '__main__':
 
-    corpus = fetch_20newsgroups(shuffle=True, 
-                                subset="all",
-                                random_state=1, 
-                                categories=None, 
-                                remove=('headers', 'footers', 'quotes'))
-    print(corpus.data[:10])
-
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    texts = [" ".join(s.split()[:64]) for s in corpus.data[:int(len(corpus.data)*0.7)]]
-    model = CWTM(num_topics=20, backbone='bert-base-uncased', device=device)
+    texts = ['A woman is reading.', 'A man is playing a guitar.', 'A girl is eating an apple.', 'A boy is sitting under a tree.']
+    
+    # backbone must be a bert based model
+    model = CWTM(num_topics=2, backbone='bert-base-uncased', device=device)
     model.fit(texts, iterations=10, batch_size=16)
 
-    model.get_topics(top_k=10)
+    stopwords = set()
+    with open("./data/stopwords.en.txt") as file:
+        for word in file.readlines():
+            stopwords.add(word.strip())
+    model.extracting_topics(texts, min_df=1, max_df=1.0, remove_top=0, stopwords=stopwords)
+    model.get_topics(top_k = 10)
 
-    texts = corpus.data[:int(len(corpus.data)*0.3)]
+    texts = ['A woman is reading.', 'A man is playing a guitar.', 'A girl is eating an apple.', 'A boy is sitting under a tree.']
     output = model.transform(texts)
     print(output['document_topic_distributions'].shape)
     print(output['word_topic_distributions'].shape)

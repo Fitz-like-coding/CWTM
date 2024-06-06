@@ -313,24 +313,20 @@ class CWTM(nn.Module):
             print(f'\ttrain train_mlm_loss: {np.mean(train_mlm_loss):.4f}')
             print(f'\ttrain train_recon_loss: {np.mean(train_recon_loss):.4f}')
 
-        print("extracting topic words...")
-        stopwords = set()
-        with open("./data/stopwords.en.txt") as file:
-            for word in file.readlines():
-                stopwords.add(word.strip())
+        print("Training finished")
+        return 
+    
+    def extracting_topics(self, texts, min_df=3, max_df=0.5, remove_top=10, stopwords=[],  batch_size=16):
+        data_generator = DataLoader(texts, batch_size=batch_size, collate_fn=self.generate_batch)
         stopwords2 = []
         for word in stopwords:
             stopwords2.extend(self.tokenizer.tokenize(word))
         stopwords.update(stopwords2)
-        self.extracting_topics(data_generator, stopwords=stopwords)
-        print("Training finished")
-        return 
-    
-    def extracting_topics(self, data, min_df=3, max_df=0.5, remove_top=10, stopwords=[]):
         lemmatizer = WordNetLemmatizer()
+
         self.eval()
         doc_count = 0
-        for i, sample in tqdm(enumerate(data), total=len(data)):
+        for i, sample in tqdm(enumerate(data_generator), total=len(data_generator)):
             input_ids = sample[0].to(self.device)
             attention_masks = sample[1].to(self.device)
             words_mask = sample[2].to(self.device)
@@ -373,12 +369,12 @@ class CWTM(nn.Module):
         for w in self.docCountByWord:
             if type(min_df) == int and self.docCountByWord[w] < min_df:
                 self.word2topic.pop(w, None)
-            elif type(min_df) == float and self.docCountByWord[w]/len(data.dataset) < min_df:
+            elif type(min_df) == float and self.docCountByWord[w]/len(texts) < min_df:
                 self.word2topic.pop(w, None)
 
             if type(max_df) == int and self.docCountByWord[w] > max_df:
                 self.word2topic.pop(w, None)
-            elif type(max_df) == float and self.docCountByWord[w]/len(data.dataset) > max_df:
+            elif type(max_df) == float and self.docCountByWord[w]/len(texts) > max_df:
                 self.word2topic.pop(w, None) 
 
 
