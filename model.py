@@ -318,6 +318,8 @@ class CWTM(nn.Module):
     
     def extracting_topics(self, texts, min_df=3, max_df=0.5, remove_top=10, stopwords=[],  batch_size=16):
         data_generator = DataLoader(texts, batch_size=batch_size, collate_fn=self.generate_batch)
+        
+        stopwords = set(stopwords)
         stopwords2 = []
         for word in stopwords:
             stopwords2.extend(self.tokenizer.tokenize(word))
