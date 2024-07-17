@@ -42,6 +42,20 @@ def cluster_acc(Y_pred, Y):
     ind = np.transpose(ind)
     return sum([w[i,j] for i,j in ind])*1.0/Y_pred.size, w
 
+tokenizer = BertTokenizerFast.from_pretrained('bert-base-uncased')
+def generate_batch(batch):
+    encoding = tokenizer([str(entry["texts"]) for entry in batch], return_tensors="pt", padding="longest", truncation=True, max_length=502)
+    label = torch.tensor([entry["labels"][0] for entry in batch])
+
+    words_mask = encoding['attention_mask'].clone()
+    length = encoding['attention_mask'].sum(1)
+
+    words_mask[torch.arange(length.size(0)), 0] = 0
+    words_mask[torch.arange(length.size(0)), length-1] = 0
+
+    sentences = [str(entry["texts"]) for entry in batch]
+    return encoding['input_ids'].type(torch.LongTensor), encoding['attention_mask'].type(torch.LongTensor), words_mask.type(torch.LongTensor), label.type(torch.LongTensor), sentences
+
 if __name__ == "__main__":
     # for config_dataset in ["20news", "TagMyNews", "Dbpedia14", "TwitterEmotion", "AGNews"]:
     config_dataset = "TwitterEmotion"
@@ -66,14 +80,12 @@ if __name__ == "__main__":
         sub_train = AGNews(subset="train")
         sub_valid = AGNews(subset="test")
 
-
     BATCH = 16
     latent_size = 20
-    cwtm_model = CWTM(latent_size = latent_size, device = device).to(device)        
-    cwtm_model.fit(train_data, N_EPOCHS)
+    model = CWTM(num_topics=latent_size, backbone='bert-base-uncased', device=device)
+    model.fit(sub_train[:]['texts'], iterations=20, batch_size=BATCH)
 
-    # cwtm_model.load("./save/CWTM_20_topics_1709658726.626927")
-    topics = cwtm_model.get_topics(10)
+    topics = model.get_topics(top_k=10)
 
     print("Extracting Coherence score...")
     evaluator = CoherenceEvaluator()
@@ -81,12 +93,12 @@ if __name__ == "__main__":
     print("Coherence score:", score)
 
     print("Extracting diversity score...")
-    evaluator = DiversityEvaluator(device=device, target_model=cwtm_model)
+    evaluator = DiversityEvaluator(device=device, target_model=model)
+    train_data = DataLoader(sub_train, batch_size=16, shuffle=True, num_workers = 4, pin_memory=True, collate_fn=generate_batch)
     evaluator.fit_embeddings(train_data)
     print("Diversity score:", evaluator.diversity_score(topics))
 
-    valid_data = DataLoader(sub_valid, batch_size=BATCH, shuffle=False, num_workers = 1, pin_memory=False, collate_fn=generate_batch)
-    X = cwtm_model.transform(valid_data)
+    X = model.transform(sub_valid[:]['texts'])
     Y = sub_valid[:]['labels']
 
     clf = LogisticRegression(max_iter=500)

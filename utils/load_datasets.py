@@ -1,12 +1,12 @@
 from datasets import load_dataset
 from sklearn.datasets import fetch_20newsgroups
 from torch.utils.data import Dataset
-from preprocessor import *
+from .preprocessor import *
 import pandas as pd
 import numpy as np
 import torch
 import re
-stopwords = read_stopwords("../data/stopwords.en.txt")
+stopwords = read_stopwords("./data/stopwords.en.txt")
 processor = preprocessor(stopwords)
 
 class TwentyNewsDataset(Dataset):
@@ -27,13 +27,11 @@ class TwentyNewsDataset(Dataset):
         texts = []
         labels = []
         for i in range(len(corpus.data[:])):
-            # add this block of code if want to reprode the results in the paper
+            # add this piece of code if reprode the results in the paper
             temp = " ".join([w for w in corpus.data[i].split()])
             temp2 = processor.preprocess(temp)
             if len(temp2) == 0:
                 continue
-            #
-
             texts.append(" ".join([w for w in corpus.data[i].split()]))
             labels.append(corpus.target[i])
 
