@@ -13,7 +13,7 @@ model.fit(texts, iterations=20)
 
 **Print top words of each topic**
 ```python
-model.get_topics(top_k=10)
+topics = model.get_topics(top_k=10)
 ```
 
 **Transform texts to get document-topic and word-topic distributions**
@@ -32,4 +32,9 @@ model.save(path="my save path")
 **load fitted model**
 ```python
 model.load(path="my save path")
+```
+
+**to reproduce the results in the paper**
+```bash
+python run_reproduce.py
 ```
