@@ -89,7 +89,7 @@ if __name__ == "__main__":
     with open("./data/stopwords.en.txt") as file:
         for word in file.readlines():
             stopwords.add(word.strip())
-    model.extracting_topics(texts, min_df=3, max_df=0.95, remove_top=10, stopwords=stopwords)
+    model.extracting_topics(sub_train[:]['texts'], min_df=3, max_df=0.95, remove_top=10, stopwords=stopwords)
     
     topics = model.get_topics(top_k=10)
 
