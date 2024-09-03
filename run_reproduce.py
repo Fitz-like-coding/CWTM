@@ -83,7 +83,7 @@ if __name__ == "__main__":
     BATCH = 16
     latent_size = 20
     model = CWTM(num_topics=latent_size, backbone='bert-base-uncased', device=device)
-    model.fit(sub_train[:]['texts'], iterations=20, batch_size=BATCH)
+    model.fit(sub_train[:]['texts'], iterations=N_EPOCHS, batch_size=BATCH)
     
     stopwords = set()
     with open("./data/stopwords.en.txt") as file:
