@@ -10,6 +10,14 @@ texts = ['A woman is reading.', 'A man is playing a guitar.', 'A girl is eating 
 model = CWTM(num_topics=20, backbone='bert-base-uncased', device=device)        
 model.fit(texts, iterations=20)
 ```
+**Extracting the topics**
+```python
+stopwords = set()
+with open("./data/stopwords.en.txt") as file: # You could also use your own stopwords list here.
+    for word in file.readlines():
+        stopwords.add(word.strip())
+model.extracting_topics(texts, min_df=1, max_df=1.0, remove_top=0, stopwords=stopwords) # adjust based on your needs. min_df and max_df define the min and max doc frequancy for vobs to be considered. remove_top means the remove top frequenct vobs.
+```
 
 **Print top words of each topic**
 ```python
