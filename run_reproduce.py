@@ -84,7 +84,13 @@ if __name__ == "__main__":
     latent_size = 20
     model = CWTM(num_topics=latent_size, backbone='bert-base-uncased', device=device)
     model.fit(sub_train[:]['texts'], iterations=20, batch_size=BATCH)
-
+    
+    stopwords = set()
+    with open("./data/stopwords.en.txt") as file:
+        for word in file.readlines():
+            stopwords.add(word.strip())
+    model.extracting_topics(texts, min_df=3, max_df=0.95, remove_top=10, stopwords=stopwords)
+    
     topics = model.get_topics(top_k=10)
 
     print("Extracting Coherence score...")
